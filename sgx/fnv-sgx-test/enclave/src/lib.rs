@@ -1,132 +1,94 @@
-//! An implementation of the [Fowler–Noll–Vo hash function][chongo].
-//!
-//! ## About
-//!
-//! The FNV hash function is a custom `Hasher` implementation that is more
-//! efficient for smaller hash keys.
-//!
-//! [The Rust FAQ states that][faq] while the default `Hasher` implementation,
-//! SipHash, is good in many cases, it is notably slower than other algorithms
-//! with short keys, such as when you have a map of integers to other values.
-//! In cases like these, [FNV is demonstrably faster][graphs].
-//!
-//! Its disadvantages are that it performs badly on larger inputs, and
-//! provides no protection against collision attacks, where a malicious user
-//! can craft specific keys designed to slow a hasher down. Thus, it is
-//! important to profile your program to ensure that you are using small hash
-//! keys, and be certain that your program could not be exposed to malicious
-//! inputs (including being a networked server).
-//!
-//! The Rust compiler itself uses FNV, as it is not worried about
-//! denial-of-service attacks, and can assume that its inputs are going to be
-//! small—a perfect use case for FNV.
-//!
-//!
-//! ## Using FNV in a `HashMap`
-//!
-//! The `FnvHashMap` type alias is the easiest way to use the standard library’s
-//! `HashMap` with FNV.
-//!
-//! ```rust
-//! use fnv::FnvHashMap;
-//!
-//! let mut map = FnvHashMap::default();
-//! map.insert(1, "one");
-//! map.insert(2, "two");
-//!
-//! map = FnvHashMap::with_capacity_and_hasher(10, Default::default());
-//! map.insert(1, "one");
-//! map.insert(2, "two");
-//! ```
-//!
-//! Note, the standard library’s `HashMap::new` and `HashMap::with_capacity`
-//! are only implemented for the `RandomState` hasher, so using `Default` to
-//! get the hasher is the next best option.
-//!
-//! ## Using FNV in a `HashSet`
-//!
-//! Similarly, `FnvHashSet` is a type alias for the standard library’s `HashSet`
-//! with FNV.
-//!
-//! ```rust
-//! use fnv::FnvHashSet;
-//!
-//! let mut set = FnvHashSet::default();
-//! set.insert(1);
-//! set.insert(2);
-//!
-//! set = FnvHashSet::with_capacity_and_hasher(10, Default::default());
-//! set.insert(1);
-//! set.insert(2);
-//! ```
-//!
-//! [chongo]: http://www.isthe.com/chongo/tech/comp/fnv/index.html
-//! [faq]: https://www.rust-lang.org/en-US/faq.html#why-are-rusts-hashmaps-slow
-//! [graphs]: https://cglab.ca/~abeinges/blah/hash-rs/
+// Copyright (C) 2017-2018 Baidu, Inc. All Rights Reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions
+// are met:
+//
+//  * Redistributions of source code must retain the above copyright
+//    notice, this list of conditions and the following disclaimer.
+//  * Redistributions in binary form must reproduce the above copyright
+//    notice, this list of conditions and the following disclaimer in
+//    the documentation and/or other materials provided with the
+//    distribution.
+//  * Neither the name of Baidu, Inc., nor the names of its
+//    contributors may be used to endorse or promote products derived
+//    from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#![no_std]
+#![crate_name = "helloworldsampleenclave"]
+#![crate_type = "staticlib"]
 
-use core::default::Default;
-use core::hash::{Hasher, BuildHasherDefault};
-use hashbrown::{HashMap, HashSet};
+#![cfg_attr(not(target_env = "sgx"), no_std)]
+#![cfg_attr(target_env = "sgx", feature(rustc_private))]
 
-/// An implementation of the Fowler–Noll–Vo hash function.
-///
-/// See the [crate documentation](index.html) for more details.
-#[allow(missing_copy_implementations)]
-pub struct FnvHasher(u64);
+extern crate sgx_types;
 
-impl Default for FnvHasher {
+#[cfg(not(target_env = "sgx"))]
+#[macro_use]
+extern crate sgx_tstd as std;
 
-    #[inline]
-    fn default() -> FnvHasher {
-        FnvHasher(0xcbf29ce484222325)
+extern crate sgx_tunittest;
+
+use sgx_types::*;
+use std::string::String;
+use std::vec::Vec;
+use std::io::{self, Write};
+use std::slice;
+use sgx_tunittest::*;
+
+extern crate fnv;
+
+#[no_mangle]
+pub extern "C" fn say_something(some_string: *const u8, some_len: usize) -> sgx_status_t {
+
+    let str_slice = unsafe { slice::from_raw_parts(some_string, some_len) };
+    let _ = io::stdout().write(str_slice);
+
+    // A sample &'static string
+    let rust_raw_string = "This is a in-Enclave ";
+    // An array
+    let word:[u8;4] = [82, 117, 115, 116];
+    // An vector
+    let word_vec:Vec<u8> = vec![32, 115, 116, 114, 105, 110, 103, 33];
+
+    // Construct a string from &'static string
+    let mut hello_string = String::from(rust_raw_string);
+
+    // Iterate on word array
+    for c in word.iter() {
+        hello_string.push(*c as char);
     }
+
+    // Rust style convertion
+    hello_string += String::from_utf8(word_vec).expect("Invalid UTF-8")
+                                               .as_str();
+
+    // Ocall to normal world for output
+    println!("{}", &hello_string);
+
+    rsgx_unit_tests!(test::basic_tests);
+
+    sgx_status_t::SGX_SUCCESS
 }
 
-impl FnvHasher {
-    /// Create an FNV hasher starting with a state corresponding
-    /// to the hash `key`.
-    #[inline]
-    pub fn with_key(key: u64) -> FnvHasher {
-        FnvHasher(key)
-    }
-}
-
-impl Hasher for FnvHasher {
-    #[inline]
-    fn finish(&self) -> u64 {
-        self.0
-    }
-
-    #[inline]
-    fn write(&mut self, bytes: &[u8]) {
-        let FnvHasher(mut hash) = *self;
-
-        for byte in bytes.iter() {
-            hash = hash ^ (*byte as u64);
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
-
-        *self = FnvHasher(hash);
-    }
-}
-
-/// A builder for default FNV hashers.
-pub type FnvBuildHasher = BuildHasherDefault<FnvHasher>;
-
-/// A `HashMap` using a default FNV hasher.
-pub type FnvHashMap<K, V> = HashMap<K, V, FnvBuildHasher>;
-
-/// A `HashSet` using a default FNV hasher.
-pub type FnvHashSet<T> = HashSet<T, FnvBuildHasher>;
-
-
-#[cfg(test)]
 mod test {
+    #[cfg(not(target_env = "sgx"))]
+    extern crate sgx_tstd as std;
+    #[cfg(target_env = "sgx")]
     extern crate std;
     use std::prelude::v1::*;
-    use super::*;
+    use fnv::*;
     use std::hash::Hasher;
 
     fn fnv1a(bytes: &[u8]) -> u64 {
@@ -143,8 +105,7 @@ mod test {
         (0..500).flat_map(|_| bytes.iter().cloned()).collect()
     }
 
-    #[test]
-    fn basic_tests() {
+    pub fn basic_tests() {
         assert_eq!(fnv1a(b""), 0xcbf29ce484222325);
         assert_eq!(fnv1a(b"a"), 0xaf63dc4c8601ec8c);
         assert_eq!(fnv1a(b"b"), 0xaf63df4c8601f1a5);
